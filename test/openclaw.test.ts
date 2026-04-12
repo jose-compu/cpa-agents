@@ -11,7 +11,7 @@ import {
 describe("openclaw adapter", () => {
   it("exports expected skill markdown content", () => {
     assert.ok(SKILL_MD.includes("cpa:parallel"));
-    assert.ok(SKILL_MD.includes("branch-fix-continue"));
+    assert.ok(SKILL_MD.includes("## Install"));
   });
 
   it("openclawTool throws when gateway is not connected", async () => {

@@ -20,25 +20,80 @@ import { Scheduler, type SchedulerResult } from "../scheduler.js";
 
 export const SKILL_MD = `# cpa-agents — Concurrent Process Algebra
 
-Orchestrate complex multi-step agent workflows using formal
-process algebra primitives. Supports parallel execution,
-branch-fix-continue patterns, and supervised error recovery.
+Use process algebra primitives to orchestrate agent workflows in OpenClaw.
+This skill is useful for parallel execution, branch-fix loops, fan-out
+comparison, and inspecting workflow state.
+
+## Install
+
+### 1) Install library
+\`\`\`bash
+npm install cpa-agents
+\`\`\`
+
+### 2) Create the skill entrypoint
+\`\`\`ts
+import { createOpenClawSkill } from "cpa-agents/adapters/openclaw";
+
+export default createOpenClawSkill();
+\`\`\`
+
+### 3) Ensure OpenClaw can execute skills
+- OpenClaw Gateway must be running.
+- Your skill runtime must allow async tool execution.
+- Keep this package at version \`0.1.0\` or newer.
 
 ## Commands
 
-- \`cpa:parallel\` — Run multiple tasks concurrently
-- \`cpa:pipeline\` — Chain tasks sequentially
-- \`cpa:branch-fix\` — Run a task with automatic error correction branching
-- \`cpa:fan-out\` — Send same task to multiple models, merge results
-- \`cpa:status\` — Show running process tree
+### cpa:parallel
+Run independent tasks concurrently.
 
-## When to use
+Input:
+\`\`\`json
+{ "tasks": ["task one", "task two"], "timeout": 300000 }
+\`\`\`
 
-Use this skill when:
-- You need to run multiple independent tasks at the same time
-- A task might fail and needs automatic retry/fix before continuing
-- You want to compare outputs from different approaches
-- Complex workflows with dependencies between steps
+### cpa:branch-fix
+Run task, detect errors, branch into a fix subprocess, then continue.
+
+Input:
+\`\`\`json
+{ "task": "implement feature with checks", "timeout": 300000 }
+\`\`\`
+
+### cpa:fan-out
+Run same task across multiple models and return merged results.
+
+Input:
+\`\`\`json
+{ "task": "draft API design", "models": ["model-a", "model-b"], "timeout": 300000 }
+\`\`\`
+
+### cpa:status
+Get current process tree/status for the current session.
+
+Input:
+\`\`\`json
+{}
+\`\`\`
+
+## Recommended usage prompts
+
+- "Run in parallel: analyze bug, propose fix, generate tests"
+- "Branch-fix this refactor until no type errors remain"
+- "Fan-out this architecture prompt across 2 models and compare"
+- "Show cpa status"
+
+## Troubleshooting
+
+- **Gateway not connected**
+  - Start OpenClaw Gateway and retry.
+- **Unknown command**
+  - Use one of: \`parallel\`, \`branch-fix\`, \`fan-out\`, \`status\`.
+- **Timeout errors**
+  - Increase \`timeout\` in command args.
+- **No session events**
+  - Confirm session context has \`appendEvent\` enabled.
 `;
 
 // ─── OpenClaw tool wrappers ─────────────────────────────────────
