@@ -49,7 +49,7 @@ export function piSubAgent<TOutput>(opts: {
 export function createPiCpaExtension() {
   return {
     name: "cpa-agents",
-    version: "0.2.0",
+    version: "0.2.1",
     description: "Concurrent Process Algebra for AI agent orchestration",
 
     commands: {

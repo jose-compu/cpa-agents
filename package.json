@@ -1,6 +1,6 @@
 {
   "name": "cpa-agents",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Concurrent Process Algebra for AI Agents — π-calculus primitives for Pi Harness and OpenClaw",
   "type": "module",
   "main": "dist/index.js",
