@@ -37,7 +37,7 @@ describe("pi-harness adapter", () => {
   it("creates extension metadata and command handlers", async () => {
     const ext = createPiCpaExtension();
     assert.equal(ext.name, "cpa-agents");
-    assert.equal(ext.version, "0.1.0");
+    assert.equal(ext.version, "0.2.0");
 
     const logLines: string[] = [];
     const piCtx = {

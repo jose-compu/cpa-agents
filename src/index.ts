@@ -57,3 +57,53 @@ export {
 
 // Scheduler
 export { Scheduler, type SchedulerOpts, type SchedulerResult } from "./scheduler.js";
+
+// Fork algebra (relational layer)
+export {
+  type Relation,
+  type RelationFn,
+  rel,
+  detRel,
+  compose,
+  fork,
+  forkN,
+  converse,
+  meet,
+  join,
+  identity,
+  empty,
+  proj1,
+  proj2,
+  domRestrict,
+  ranRestrict,
+  toProcess,
+  forkToProcess,
+  verifyAxioms,
+} from "./fork-algebra.js";
+
+// Operators (bash-style control flow + inverse/undo)
+export {
+  type Result,
+  type BackgroundHandle,
+  type Invertible,
+  attempt,
+  unwrap,
+  and,
+  or,
+  ifThenElse,
+  pipe,
+  pipeChain,
+  bg,
+  not,
+  waitAll,
+  andChain,
+  orChain,
+  subshell,
+  invertible,
+  runInvertible,
+  saga,
+  guard,
+  guardValue,
+  timeout,
+  retryWithBackoff,
+} from "./operators.js";
