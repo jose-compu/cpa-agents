@@ -1,14 +1,44 @@
 # cpa-agents
 
-Concurrent Process Algebra for AI Agents. Applies π-calculus process algebra to agent orchestration in [Pi Harness](https://github.com/badlogic/pi-mono) and [OpenClaw](https://github.com/openclaw/openclaw).
+Concurrent Process Algebra for AI Agents.
+
+`cpa-agents` combines three layers:
+- process algebra (pi-calculus primitives for concurrency/communication)
+- fork algebra (relational composition and paired derivations)
+- operator algebra (practical control flow: rollback, retries, guards, timeout)
+
+Designed for [Pi Harness](https://github.com/badlogic/pi-mono), [OpenClaw](https://github.com/openclaw/openclaw), and standalone TypeScript workflows.
+
+## Install
+
+```bash
+npm install cpa-agents
+```
+
+## Quick start
+
+```typescript
+import { Scheduler, par, agentProcess } from "cpa-agents";
+
+const scheduler = new Scheduler({ timeout: 60_000 });
+
+const research = par(
+  agentProcess(webSearchAgent, "latest React patterns"),
+  agentProcess(codeSearchAgent, "auth middleware examples"),
+);
+
+const result = await scheduler.run("research", research);
+```
 
 ## Why
 
-AI agent harnesses have ad-hoc concurrency: spawn a subprocess, hope it works, manually wire results back. Pi Harness has session trees with branching. OpenClaw has a ReAct loop with skills. Neither has a formal model for what happens when agent tasks run concurrently, need to communicate, or branch to fix errors before continuing.
+Most agent harnesses implement orchestration with ad-hoc control flow and minimal runtime semantics. This library provides formal, typed primitives for:
+- concurrent task execution
+- explicit synchronization and communication
+- fix-and-resume branching
+- provenance and rollback-aware workflows
 
-This library gives you that model. The primitives come from Robin Milner's π-calculus — the same theory behind BPMN, BPEL, and every serious workflow engine — but adapted for the specific patterns AI coding agents actually use.
-
-## Core concepts
+## Layer 1: Process algebra
 
 | π-calculus | cpa-agents | What it does |
 |---|---|---|
@@ -19,26 +49,28 @@ This library gives you that model. The primitives come from Robin Milner's π-ca
 | `ν(x).P` | `restrict(name, body)` | Create a fresh scoped channel |
 | `!P` | `replicate(trigger, handler)` | Spawn new P for each incoming message |
 
-## Usage
+Core runtime exports:
+- `Channel`, `select`
+- `par`, `seq`, `choice`, `branchFix`, `restrict`, `replicate`, `supervisor`
+- `Scheduler`
 
-### Branch-fix-continue (the tree pattern)
+### Branch-fix-continue
 
-The pattern you see in Pi Harness session trees: coding along, hitting a lint error, branching to fix it, then resuming.
+Pattern for "run -> detect error -> fix -> resume".
 
 ```typescript
-import { branchFix, Scheduler } from 'cpa-agents';
+import { branchFix, Scheduler } from "cpa-agents";
 
 const workflow = branchFix<string>({
-  name: 'implement-feature',
+  name: "implement-feature",
   maxFixes: 3,
 
   main: (requestFix) => async (ctx) => {
-    const code = await coder.invoke('add auth middleware', ctx.signal);
+    const code = await coder.invoke("add auth middleware", ctx.signal);
     const check = await linter.invoke(code, ctx.signal);
 
     if (!check.pass) {
-      // Branch: pause main, run fix, then continue here
-      await requestFix(check.errors.join('; '));
+      await requestFix(check.errors.join("; "));
     }
 
     return code;
@@ -50,96 +82,121 @@ const workflow = branchFix<string>({
 });
 
 const scheduler = new Scheduler({ timeout: 60_000 });
-const result = await scheduler.run('feature', workflow);
-// result.sessionTree shows the full branch history
+const result = await scheduler.run("feature", workflow);
 ```
 
-### Parallel agents
+## Layer 2: Fork algebra (relations)
+
+Fork algebra models relation composition and paired derivations over the same input.
 
 ```typescript
-import { par, agentProcess } from 'cpa-agents';
+import { rel, fork, compose, meet, join, toProcess } from "cpa-agents";
 
-const research = par(
-  agentProcess(webSearchAgent, 'latest React patterns'),
-  agentProcess(codeSearchAgent, 'auth middleware examples'),
-  agentProcess(docSearchAgent, 'project conventions'),
-);
+const parse = rel("parse", async (input: string) => [input.trim()]);
+const enrich = rel("enrich", async (input: string) => [`${input}:meta`]);
+const validate = rel("validate", async (input: string) => [input.length > 0 ? "ok" : "bad"]);
 
-const [web, code, docs] = await scheduler.run('research', research);
+const composed = compose(parse, enrich);
+const paired = fork(enrich, validate);
+
+const proc = toProcess(composed, "task payload", "all");
+const run = await scheduler.run("fork-layer", proc);
 ```
 
-### Channel communication between agents
+Key exports:
+- `rel`, `detRel`
+- `compose`, `fork`, `forkN`
+- `converse` (provenance mapping, not rollback)
+- `meet`, `join`, `identity`, `empty`
+- `proj1`, `proj2`, `domRestrict`, `ranRestrict`
+- `toProcess`, `forkToProcess`, `verifyAxioms`
+
+## Layer 3: Operator algebra (control flow)
+
+Operator layer provides shell-style and reliability-focused control flow.
 
 ```typescript
-import { Channel, restrict, par } from 'cpa-agents';
+import {
+  and,
+  or,
+  pipe,
+  saga,
+  invertible,
+  retryWithBackoff,
+  timeout,
+} from "cpa-agents";
 
-const workflow = restrict<CodeReview, void>('review-ch', (ch) =>
-  par(
-    // Agent 1: write code, send for review
-    async (ctx) => {
-      const code = await coder.invoke(task, ctx.signal);
-      await ch.send({ code, file: 'auth.ts' });
-    },
-    // Agent 2: receive code, review it
-    async (ctx) => {
-      const review = await ch.receive();
-      await reviewer.invoke(review, ctx.signal);
-    },
-  )
-);
+const guardedDeploy = and(buildProcess, deployProcess); // A && B
+const withFallback = or(primaryProcess, fallbackProcess); // A || B
+const piped = pipe(fetchProcess, (data) => transformProcess(data)); // A | B
+
+const transactional = saga([
+  invertible(createBranch, deleteBranch),
+  invertible(writeChanges, revertChanges),
+  invertible(runChecks, cleanupChecks),
+]);
+
+const resilient = retryWithBackoff({
+  process: timeout(30_000, transactional),
+  maxAttempts: 3,
+});
 ```
 
-### Pi Harness integration
+Key exports:
+- `attempt`, `unwrap`
+- `and`, `or`, `ifThenElse`, `pipe`, `pipeChain`
+- `bg`, `waitAll`, `not`, `andChain`, `orChain`, `subshell`
+- `invertible`, `runInvertible`, `saga`
+- `guard`, `guardValue`, `timeout`, `retryWithBackoff`
 
-```typescript
-// .pi/extensions/cpa.ts
-import { createPiCpaExtension } from 'cpa-agents/adapters/pi';
-export default createPiCpaExtension();
-
-// Then in Pi:
-// /cpa:par implement auth | write tests | update docs
-// /cpa:fix refactor the database layer
-// /cpa:tree
-```
-
-### OpenClaw integration
+## OpenClaw integration
 
 ```typescript
 // ~/.openclaw/skills/cpa-agents/index.ts
-import { createOpenClawSkill } from 'cpa-agents/adapters/openclaw';
+import { createOpenClawSkill } from "cpa-agents/adapters/openclaw";
 export default createOpenClawSkill();
-
-// Then via any messaging channel:
-// "Run these tasks in parallel: research competitors, draft blog post"
-// "Fix the auth module — branch and fix any type errors"
 ```
 
-## Session tree
+Supported commands:
+- `parallel`
+- `branch-fix`
+- `fan-out`
+- `status`
 
-Every process execution produces a session tree — a record of all spawns, branches, fixes, and completions. This maps directly to Pi Harness's `/tree` view and OpenClaw's session logs.
+Skill authoring docs are in `skills/cpa-agents/SKILL.md`.
+
+## Pi Harness integration
 
 ```typescript
-const result = await scheduler.run('workflow', myProcess);
+// .pi/extensions/cpa.ts
+import { createPiCpaExtension } from "cpa-agents/adapters/pi";
+export default createPiCpaExtension();
+```
+
+## Session tree and trace
+
+Every scheduler run emits:
+- `sessionTree` (hierarchical execution tree)
+- `trace` (flat event list)
+
+```typescript
+const result = await scheduler.run("workflow", myProcess);
 
 for (const node of result.sessionTree) {
   console.log(node.name, node.runId);
   for (const child of node.children) {
-    console.log('  └─', child.name);
+    console.log("  └─", child.name);
   }
 }
 ```
 
-The trace is also available as a flat event log via `scheduler.getTrace()`, suitable for serialization to OpenClaw's workspace files or Pi's session JSONL format.
+## Development
 
-## Design decisions
-
-**Synchronous rendezvous channels**, not buffered queues. A `send` blocks until a `receive` matches it. This is the π-calculus default and prevents the subtle bugs you get when messages pile up in buffers unobserved.
-
-**Cooperative scheduling** via async/await, not preemptive. LLM calls are inherently async and long-running. The scheduler doesn't need to timeslice — it just needs to manage the dependency graph.
-
-**Typed channels**. `Channel<T>` carries values of type T. This catches mismatched agent interfaces at compile time rather than runtime.
-
-**Trace-first**. Every operation emits trace events. The session tree isn't reconstructed after the fact — it's built as processes execute, so you can inspect it mid-run.
+```bash
+npm run check
+npm test
+npm run coverage
+```
 
 ## License
 
