@@ -1,0 +1,51 @@
+{
+  "name": "cpa-agents",
+  "version": "0.1.0",
+  "description": "Concurrent Process Algebra for AI Agents — π-calculus primitives for Pi Harness and OpenClaw",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./adapters/pi": {
+      "import": "./dist/adapters/pi-harness.js",
+      "types": "./dist/adapters/pi-harness.d.ts"
+    },
+    "./adapters/openclaw": {
+      "import": "./dist/adapters/openclaw.js",
+      "types": "./dist/adapters/openclaw.d.ts"
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
+    "test": "tsx --test test/*.test.ts",
+    "coverage": "c8 --all --include='src/**/*.ts' --reporter=text --check-coverage --lines 80 --branches 80 --functions 80 --statements 80 npm test",
+    "check": "tsc --noEmit",
+    "prepublishOnly": "npm run check && npm run build && npm test && npm run coverage"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-calculus",
+    "process-algebra",
+    "ai-agents",
+    "concurrency",
+    "pi-harness",
+    "openclaw",
+    "orchestration"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "c8": "^11.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.0"
+  }
+}
