@@ -200,11 +200,11 @@ export function handoff<THandoff>(opts: {
             channel: ch.name,
             ts: Date.now(),
           });
-          await ch.send(result);
+          await ch.send(result, pCtx.signal);
         },
         // Consumer: receives from channel, runs `to`
         async (cCtx) => {
-          const value = await ch.receive();
+          const value = await ch.receive(cCtx.signal);
           cCtx.trace.emit({
             type: "receive",
             runId: cCtx.runId,

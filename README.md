@@ -7,7 +7,7 @@ Concurrent Process Algebra for AI Agents.
 - fork algebra (relational composition and paired derivations)
 - operator algebra (practical control flow: rollback, retries, guards, timeout)
 
-Designed for [Pi Harness](https://github.com/badlogic/pi-mono), [OpenClaw](https://github.com/openclaw/openclaw), and standalone TypeScript workflows.
+Designed for [Pi Coding Agent](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`), [OpenClaw](https://github.com/openclaw/openclaw), and standalone TypeScript workflows.
 
 ## Install
 
@@ -167,10 +167,26 @@ Skill authoring docs are in `skills/cpa-agents/SKILL.md`.
 
 ## Pi Harness integration
 
+Pi upstream lives at [`earendil-works/pi`](https://github.com/earendil-works/pi) with packages `@earendil-works/pi-coding-agent`, `@earendil-works/pi-agent-core`, and `@earendil-works/pi-ai`. The adapter below targets the extension API and expects `piCtx.agent.run(task)`:
+
 ```typescript
 // .pi/extensions/cpa.ts
 import { createPiCpaExtension } from "cpa-agents/adapters/pi";
+
 export default createPiCpaExtension();
+```
+
+Extension commands: `cpa:par`, `cpa:fix`, `cpa:tree`, `cpa:retry`, `cpa:fallback`, `cpa:saga`, `cpa:fan-out`.
+
+For standalone workflows outside the extension, wire factories via `configurePiBridge()` or pass `bridge` per factory:
+
+```typescript
+import { configurePiBridge, piSubAgent } from "cpa-agents/adapters/pi";
+
+configurePiBridge({
+  runSubAgent: async ({ prompt }, signal) => host.run(prompt, { signal }),
+  runTool: async ({ tool, args }, signal) => host.runTool(tool, args, { signal }),
+});
 ```
 
 ## Session tree and trace
@@ -178,6 +194,23 @@ export default createPiCpaExtension();
 Every scheduler run emits:
 - `sessionTree` (hierarchical execution tree)
 - `trace` (flat event list)
+
+Persist traces as JSONL (Pi-compatible) and reload them:
+
+```typescript
+import { Scheduler, loadJsonlTree, eventsToSessionTree } from "cpa-agents";
+
+const scheduler = new Scheduler();
+const sink = scheduler.attachJsonl("./session.jsonl");
+
+const result = await scheduler.run("workflow", myProcess);
+await sink.close();
+
+const tree = await loadJsonlTree("./session.jsonl");
+// or: eventsToSessionTree(result.trace.events)
+```
+
+Inspect the live tree:
 
 ```typescript
 const result = await scheduler.run("workflow", myProcess);

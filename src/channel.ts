@@ -15,6 +15,23 @@ export function freshId(prefix = "ch"): ChannelId {
 interface Waiter<T> {
   resolve: (value: T) => void;
   reject: (err: Error) => void;
+  cleanup?: () => void;
+}
+
+function abortError(signal?: AbortSignal): Error {
+  if (signal?.reason instanceof Error) return signal.reason;
+  const err = new Error("Aborted");
+  err.name = "AbortError";
+  return err;
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "aborted" in value &&
+    typeof (value as AbortSignal).addEventListener === "function"
+  );
 }
 
 /**
@@ -41,21 +58,40 @@ export class Channel<T = unknown> {
    * Send a value. Blocks until a receiver picks it up (rendezvous).
    * In π-calculus: ā⟨v⟩.P — output v on channel a, then continue as P.
    */
-  send(value: T): Promise<void> {
+  send(value: T, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) {
+      return Promise.reject(abortError(signal));
+    }
     if (this._closed) {
       return Promise.reject(new Error(`Channel ${this.name} is closed`));
     }
 
-    // If a receiver is already waiting, hand off directly
     const receiver = this.recvQueue.shift();
     if (receiver) {
+      receiver.cleanup?.();
       receiver.resolve(value);
       return Promise.resolve();
     }
 
-    // Otherwise, block until a receiver appears
     return new Promise<void>((resolve, reject) => {
-      this.sendQueue.push({ value, done: { resolve, reject } });
+      const entry: { value: T; done: Waiter<void> } = {
+        value,
+        done: { resolve, reject },
+      };
+
+      const onAbort = () => {
+        const idx = this.sendQueue.indexOf(entry);
+        if (idx >= 0) this.sendQueue.splice(idx, 1);
+        reject(abortError(signal));
+      };
+
+      if (signal) {
+        entry.done.cleanup = () =>
+          signal.removeEventListener("abort", onAbort);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      this.sendQueue.push(entry);
     });
   }
 
@@ -63,21 +99,36 @@ export class Channel<T = unknown> {
    * Receive a value. Blocks until a sender provides one.
    * In π-calculus: a(x).P — input x from channel a, then continue as P.
    */
-  receive(): Promise<T> {
+  receive(signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) {
+      return Promise.reject(abortError(signal));
+    }
     if (this._closed && this.sendQueue.length === 0) {
       return Promise.reject(new Error(`Channel ${this.name} is closed`));
     }
 
-    // If a sender is already waiting, hand off directly
     const sender = this.sendQueue.shift();
     if (sender) {
+      sender.done.cleanup?.();
       sender.done.resolve();
       return Promise.resolve(sender.value);
     }
 
-    // Otherwise, block until a sender appears
     return new Promise<T>((resolve, reject) => {
-      this.recvQueue.push({ resolve, reject });
+      const waiter: Waiter<T> = { resolve, reject };
+
+      const onAbort = () => {
+        const idx = this.recvQueue.indexOf(waiter);
+        if (idx >= 0) this.recvQueue.splice(idx, 1);
+        reject(abortError(signal));
+      };
+
+      if (signal) {
+        waiter.cleanup = () => signal.removeEventListener("abort", onAbort);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      this.recvQueue.push(waiter);
     });
   }
 
@@ -87,6 +138,7 @@ export class Channel<T = unknown> {
   tryReceive(): T | undefined {
     const sender = this.sendQueue.shift();
     if (sender) {
+      sender.done.cleanup?.();
       sender.done.resolve();
       return sender.value;
     }
@@ -98,9 +150,38 @@ export class Channel<T = unknown> {
    */
   close(): void {
     this._closed = true;
-    const err = new Error(`Channel ${this.name} closed`);
-    for (const w of this.sendQueue) w.done.reject(err);
-    for (const w of this.recvQueue) w.reject(err);
+    this.cancelPendingWaiters(new Error(`Channel ${this.name} closed`));
+  }
+
+  /** Cancel pending receivers without closing the channel. */
+  cancelPendingReceives(reason?: Error): void {
+    const err = reason ?? abortError();
+    for (const w of this.recvQueue) {
+      w.cleanup?.();
+      w.reject(err);
+    }
+    this.recvQueue = [];
+  }
+
+  /** Cancel pending senders without closing the channel. */
+  cancelPendingSends(reason?: Error): void {
+    const err = reason ?? abortError();
+    for (const w of this.sendQueue) {
+      w.done.cleanup?.();
+      w.done.reject(err);
+    }
+    this.sendQueue = [];
+  }
+
+  private cancelPendingWaiters(err: Error): void {
+    for (const w of this.sendQueue) {
+      w.done.cleanup?.();
+      w.done.reject(err);
+    }
+    for (const w of this.recvQueue) {
+      w.cleanup?.();
+      w.reject(err);
+    }
     this.sendQueue = [];
     this.recvQueue = [];
   }
@@ -126,20 +207,91 @@ export class Channel<T = unknown> {
 /**
  * Select: π-calculus external choice (P + Q).
  * Waits on multiple channels, returns the first that fires.
+ * Losing branches are cancelled so receivers do not leak.
  */
 export interface SelectCase<T> {
   channel: Channel<T>;
   handler: (value: T) => Promise<void> | void;
 }
 
-export async function select(...cases: SelectCase<any>[]): Promise<void> {
-  // Race all receives
-  const result = await Promise.race(
-    cases.map(async (c, i) => {
-      const value = await c.channel.receive();
-      return { index: i, value };
-    })
+export async function select(
+  signal: AbortSignal,
+  ...cases: SelectCase<any>[]
+): Promise<void>;
+export async function select(...cases: SelectCase<any>[]): Promise<void>;
+export async function select(
+  signalOrCase: AbortSignal | SelectCase<any>,
+  ...rest: SelectCase<any>[]
+): Promise<void> {
+  let signal: AbortSignal | undefined;
+  let cases: SelectCase<any>[];
+
+  if (isAbortSignal(signalOrCase)) {
+    signal = signalOrCase;
+    cases = rest;
+  } else {
+    cases = [signalOrCase, ...rest];
+  }
+
+  if (cases.length === 0) {
+    throw new Error("select requires at least one case");
+  }
+
+  const raceAbort = new AbortController();
+  const parentAbort = signal;
+  const caseControllers = cases.map(() => new AbortController());
+
+  const merged = (caseAbort: AbortController) =>
+    mergeAbortSignals(parentAbort, raceAbort.signal, caseAbort.signal);
+
+  const result = await new Promise<{ index: number; value: unknown }>(
+    (resolve, reject) => {
+      let settled = false;
+      let failures = 0;
+
+      cases.forEach((c, i) => {
+        const caseAbort = caseControllers[i];
+        c.channel
+          .receive(merged(caseAbort))
+          .then((value) => {
+            if (settled) return;
+            settled = true;
+            for (let j = 0; j < cases.length; j++) {
+              if (j !== i) {
+                caseControllers[j].abort();
+                cases[j].channel.cancelPendingReceives(abortError());
+              }
+            }
+            raceAbort.abort();
+            resolve({ index: i, value });
+          })
+          .catch((err) => {
+            if (settled) return;
+            failures++;
+            if (failures === cases.length) {
+              reject(err);
+            }
+          });
+      });
+    }
   );
 
   await cases[result.index].handler(result.value);
+}
+
+function mergeAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (!signal) continue;
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return controller.signal;
+    }
+    signal.addEventListener(
+      "abort",
+      () => controller.abort(signal.reason),
+      { once: true }
+    );
+  }
+  return controller.signal;
 }

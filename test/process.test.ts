@@ -10,6 +10,7 @@ import {
   choice,
   branchFix,
   restrict,
+  replicate,
   supervisor,
 } from "../src/process.js";
 import { Scheduler } from "../src/scheduler.js";
@@ -269,6 +270,52 @@ describe("branchFix", () => {
       assert.equal(fixStarts[0].reason, "some issue");
     }
   });
+
+  it("propagates fix process errors and emits fix_end success false", async () => {
+    const proc = branchFix<string>({
+      name: "fix-throws",
+      main: (requestFix) => async () => {
+        await requestFix("broken");
+        return "never";
+      },
+      fix: () => async () => {
+        throw new Error("fix failed");
+      },
+    });
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("branchfix-fix-error", proc);
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.ok(result.error.message.includes("fix failed"));
+    }
+
+    const fixEnds = scheduler.getTrace().filter((e) => e.type === "fix_end");
+    assert.equal(fixEnds.length, 1);
+    if (fixEnds[0].type === "fix_end") {
+      assert.equal(fixEnds[0].success, false);
+    }
+  });
+
+  it("main rejection after requestFix does not hang", async () => {
+    const proc = branchFix<string>({
+      name: "main-rejects",
+      main: (requestFix) => async () => {
+        await requestFix("needs fix");
+        throw new Error("main blew up");
+      },
+      fix: () => async () => {},
+    });
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("branchfix-main-reject", proc);
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.ok(result.error.message.includes("main blew up"));
+    }
+  });
 });
 
 describe("restrict", () => {
@@ -303,6 +350,46 @@ describe("restrict", () => {
 
     assert.ok(capturedCh);
     assert.ok(capturedCh.closed);
+  });
+});
+
+describe("replicate", () => {
+  it("spawns a handler for each trigger message", async () => {
+    const trigger = new Channel<number>("trigger");
+    let handled = 0;
+
+    const proc = replicate(trigger, (n) => async () => {
+      handled += n;
+    });
+
+    const scheduler = makeScheduler();
+    const runPromise = scheduler.run("replicate-test", proc);
+
+    await trigger.send(1);
+    await trigger.send(2);
+    await delay(20);
+    trigger.close();
+    await runPromise;
+
+    assert.equal(handled, 3);
+  });
+
+  it("emits trace error on unexpected receive failure", async () => {
+    class BrokenChannel extends Channel<number> {
+      override receive(): Promise<number> {
+        return Promise.reject(new Error("receive boom"));
+      }
+    }
+
+    const trigger = new BrokenChannel("broken");
+    const proc = replicate(trigger, () => async () => {});
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("replicate-error", proc);
+
+    assert.ok(!result.success);
+    const errors = scheduler.getTrace().filter((e) => e.type === "error");
+    assert.ok(errors.some((e) => e.type === "error" && e.error.includes("receive boom")));
   });
 });
 
