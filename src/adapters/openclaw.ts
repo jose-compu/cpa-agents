@@ -4,7 +4,6 @@
  * Integrates cpa-agents as an OpenClaw skill.
  */
 
-import { Channel } from "../channel.js";
 import {
   type Process,
   type ProcessContext,
@@ -14,7 +13,12 @@ import {
   branchFix,
 } from "../process.js";
 import { type AgentCall, agentProcess, fanOut } from "../agent.js";
+import { invertible, or, retryWithBackoff, saga, timeout } from "../operators.js";
 import { Scheduler, type SchedulerResult } from "../scheduler.js";
+import { sessionTreeToMarkdown } from "../session-tree.js";
+import { VERSION } from "../version.js";
+
+export { sessionTreeToMarkdown };
 
 // ─── SKILL.md content ───────────────────────────────────────────
 
@@ -41,7 +45,7 @@ export default createOpenClawSkill();
 ### 3) Ensure OpenClaw can execute skills
 - OpenClaw Gateway must be running.
 - Your skill runtime must allow async tool execution.
-- Keep this package at version \`0.1.0\` or newer.
+- Keep this package at version \`${VERSION}\` or newer.
 
 ## Commands
 
@@ -69,6 +73,30 @@ Input:
 { "task": "draft API design", "models": ["model-a", "model-b"], "timeout": 300000 }
 \`\`\`
 
+### cpa:retry
+Retry a task with exponential backoff and per-attempt timeout.
+
+Input:
+\`\`\`json
+{ "task": "fix flaky test", "maxAttempts": 3, "initialDelayMs": 250, "stepTimeout": 60000 }
+\`\`\`
+
+### cpa:fallback
+Run fallback task if primary task fails.
+
+Input:
+\`\`\`json
+{ "primary": "run strict analyzer", "fallback": "run lightweight analyzer" }
+\`\`\`
+
+### cpa:saga
+Run multiple steps with rollback compensation on failure.
+
+Input:
+\`\`\`json
+{ "steps": ["create branch", "apply patch", "run validation"] }
+\`\`\`
+
 ### cpa:status
 Get current process tree/status for the current session.
 
@@ -89,7 +117,7 @@ Input:
 - **Gateway not connected**
   - Start OpenClaw Gateway and retry.
 - **Unknown command**
-  - Use one of: \`parallel\`, \`branch-fix\`, \`fan-out\`, \`status\`.
+  - Use one of: \`parallel\`, \`branch-fix\`, \`fan-out\`, \`retry\`, \`fallback\`, \`saga\`, \`status\`.
 - **Timeout errors**
   - Increase \`timeout\` in command args.
 - **No session events**
@@ -98,19 +126,56 @@ Input:
 
 // ─── OpenClaw tool wrappers ─────────────────────────────────────
 
+export interface OpenClawBridge {
+  runTool: (
+    tool: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal
+  ) => Promise<unknown>;
+  readMemory: (key: string, signal?: AbortSignal) => Promise<string>;
+  writeMemory: (
+    input: { key: string; value: string },
+    signal?: AbortSignal
+  ) => Promise<void>;
+}
+
+let configuredOpenClawBridge: OpenClawBridge | undefined;
+
+/** Connect standalone openclawTool/workspaceAgent factories to a gateway. */
+export function configureOpenClawBridge(
+  bridge: OpenClawBridge | undefined
+): void {
+  configuredOpenClawBridge = bridge;
+}
+
+function resolveOpenClawBridge(explicit?: OpenClawBridge): OpenClawBridge {
+  const bridge = explicit ?? configuredOpenClawBridge;
+  if (!bridge) {
+    throw new Error(
+      "OpenClaw bridge not connected. Pass bridge to the factory, call configureOpenClawBridge(), " +
+        "or use createOpenClawSkill() with openclawCtx.agent."
+    );
+  }
+  return bridge;
+}
+
 export function openclawTool<TInput, TOutput>(opts: {
   name: string;
   tool: string;
   buildArgs: (input: TInput) => Record<string, unknown>;
   parseResult: (raw: unknown) => TOutput;
+  bridge?: OpenClawBridge;
 }): AgentCall<TInput, TOutput> {
   return {
     name: `openclaw:${opts.name}`,
-    invoke: async (_input: TInput, _signal: AbortSignal): Promise<TOutput> => {
-      throw new Error(
-        `openclawTool(${opts.name}): Gateway not connected. ` +
-          `Ensure OpenClaw Gateway is running on ws://127.0.0.1:18789`
+    invoke: async (input: TInput, signal: AbortSignal): Promise<TOutput> => {
+      const bridge = resolveOpenClawBridge(opts.bridge);
+      const raw = await bridge.runTool(
+        opts.tool,
+        opts.buildArgs(input),
+        signal
       );
+      return opts.parseResult(raw);
     },
   };
 }
@@ -118,24 +183,27 @@ export function openclawTool<TInput, TOutput>(opts: {
 export function workspaceAgent(opts: {
   name: string;
   workspacePath?: string;
+  bridge?: OpenClawBridge;
 }): {
   readMemory: AgentCall<string, string>;
   writeMemory: AgentCall<{ key: string; value: string }, void>;
 } {
+  const getBridge = () => resolveOpenClawBridge(opts.bridge);
+
   return {
     readMemory: {
       name: `workspace:read:${opts.name}`,
-      invoke: async (_key: string, _signal: AbortSignal): Promise<string> => {
-        throw new Error("Workspace bridge not connected");
+      invoke: async (key: string, signal: AbortSignal): Promise<string> => {
+        return getBridge().readMemory(key, signal);
       },
     },
     writeMemory: {
       name: `workspace:write:${opts.name}`,
       invoke: async (
-        _input: { key: string; value: string },
-        _signal: AbortSignal
+        input: { key: string; value: string },
+        signal: AbortSignal
       ): Promise<void> => {
-        throw new Error("Workspace bridge not connected");
+        await getBridge().writeMemory(input, signal);
       },
     },
   };
@@ -161,7 +229,7 @@ export function createOpenClawSkill() {
 
   return {
     name: "cpa-agents",
-    version: "0.2.1",
+    version: VERSION,
     skillMd: SKILL_MD,
 
     async handleCommand(
@@ -180,6 +248,25 @@ export function createOpenClawSkill() {
       schedulers.set(sessionId, scheduler);
 
       try {
+        const runTask =
+          (task: string, model?: string): Process<string> =>
+          async (ctx: ProcessContext) => {
+            const result = await openclawCtx.agent.run(task, {
+              model,
+              signal: ctx.signal,
+            });
+            if (result.errors?.length) {
+              throw new Error(result.errors.join("; "));
+            }
+            return result.output;
+          };
+
+        const runTaskVoid =
+          (task: string, model?: string): Process<void> =>
+          async (ctx: ProcessContext) => {
+            await runTask(task, model)(ctx);
+          };
+
         switch (command) {
           case "parallel": {
             const tasks = args.tasks as string[];
@@ -256,20 +343,75 @@ export function createOpenClawSkill() {
             return scheduler.run("fan-out", proc);
           }
 
+          case "retry": {
+            const task = args.task as string;
+            const model = args.model as string | undefined;
+            const maxAttempts = (args.maxAttempts as number) ?? 3;
+            const initialDelayMs = (args.initialDelayMs as number) ?? 250;
+            const stepTimeout = (args.stepTimeout as number) ?? 60_000;
+
+            const proc = retryWithBackoff({
+              process: timeout(stepTimeout, runTask(task, model)),
+              maxAttempts,
+              initialDelayMs,
+            });
+
+            return scheduler.run("retry", proc);
+          }
+
+          case "fallback": {
+            const primary = args.primary as string;
+            const fallback = args.fallback as string;
+            const model = args.model as string | undefined;
+
+            const proc: Process<string> = async (ctx: ProcessContext) => {
+              const result = await or(
+                runTask(primary, model),
+                runTask(fallback, model)
+              )(ctx);
+              if (!result.ok) {
+                throw result.error;
+              }
+              return result.value;
+            };
+
+            return scheduler.run("fallback", proc);
+          }
+
+          case "saga": {
+            const steps = (args.steps as string[]) ?? [];
+            const model = args.model as string | undefined;
+
+            const proc = saga(
+              steps.map((step) =>
+                invertible(
+                  runTask(step, model),
+                  () =>
+                    runTaskVoid(
+                      `Rollback/undo the effects of this step: ${step}`,
+                      model
+                    )
+                )
+              )
+            );
+
+            return scheduler.run("saga", proc);
+          }
+
           case "status": {
             const s = schedulers.get(sessionId);
             if (!s) {
               return {
                 success: true,
                 value: { message: "No active CPA processes" },
-                trace: scheduler["trace"],
+                trace: scheduler.traceCollector,
                 sessionTree: [],
               };
             }
             return {
               success: true,
               value: { tree: s.getSessionTree() },
-              trace: s["trace"],
+              trace: s.traceCollector,
               sessionTree: s.getSessionTree(),
             };
           }
@@ -284,47 +426,3 @@ export function createOpenClawSkill() {
   };
 }
 
-// ─── Session tree serialization ─────────────────────────────────
-
-export function sessionTreeToMarkdown(
-  nodes: SessionNode[],
-  depth = 0
-): string {
-  const indent = "  ".repeat(depth);
-  let md = "";
-
-  for (const node of nodes) {
-    const status = node.events.some((e: TraceEvent) => e.type === "error")
-      ? "error"
-      : node.events.some((e: TraceEvent) => e.type === "done")
-        ? "done"
-        : "running";
-
-    md += `${indent}- **${node.name}** (${node.runId}) [${status}]\n`;
-
-    const branches = node.events.filter(
-      (e: TraceEvent) => e.type === "branch"
-    );
-    for (const b of branches) {
-      if (b.type === "branch") {
-        md += `${indent}  - Branch: chose "${b.chosen}" from [${b.alternatives.join(", ")}]\n`;
-      }
-    }
-
-    const fixes = node.events.filter(
-      (e: TraceEvent) =>
-        e.type === "fix_start" || e.type === "fix_end"
-    );
-    for (const f of fixes) {
-      if (f.type === "fix_start") {
-        md += `${indent}  - Fix started: ${f.reason}\n`;
-      }
-    }
-
-    if (node.children.length > 0) {
-      md += sessionTreeToMarkdown(node.children, depth + 1);
-    }
-  }
-
-  return md;
-}

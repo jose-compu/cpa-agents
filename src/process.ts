@@ -161,7 +161,7 @@ export function choice<T>(
       },
     }));
 
-    await select(...cases);
+    await select(ctx.signal, ...cases);
 
     ctx.trace.emit({
       type: "branch",
@@ -199,6 +199,7 @@ export function branchFix<T>(opts: {
 
   return async (ctx) => {
     let fixCount = 0;
+    let lastFixError: Error | undefined;
 
     const fixChannel = new Channel<string>(`${opts.name}_fix`);
     const fixDone = new Channel<void>(`${opts.name}_fixdone`);
@@ -210,6 +211,7 @@ export function branchFix<T>(opts: {
         );
       }
       fixCount++;
+      lastFixError = undefined;
 
       ctx.trace.emit({
         type: "fix_start",
@@ -218,10 +220,12 @@ export function branchFix<T>(opts: {
         ts: Date.now(),
       });
 
-      // Signal that a fix is needed
-      await fixChannel.send(reason);
-      // Wait for the fix to complete
-      await fixDone.receive();
+      await fixChannel.send(reason, ctx.signal);
+      try {
+        await fixDone.receive(ctx.signal);
+      } catch (err) {
+        throw lastFixError ?? err;
+      }
 
       ctx.trace.emit({
         type: "fix_end",
@@ -232,21 +236,32 @@ export function branchFix<T>(opts: {
     };
 
     const mainProcess = opts.main(requestFix);
-
-    // Run main and fix-listener concurrently
     const mainPromise = mainProcess(ctx);
 
-    // Fix listener loop: runs in background
-    const fixListener = (async () => {
+    const fixListenerPromise = (async () => {
       while (!fixChannel.closed) {
+        let reason: string;
         try {
-          const reason = await fixChannel.receive();
-          const fixProc = opts.fix(reason);
-          await fixProc(ctx);
-          await fixDone.send(undefined);
-        } catch {
-          // Channel closed or fix failed — stop listening
-          break;
+          reason = await fixChannel.receive(ctx.signal);
+        } catch (err) {
+          if (fixChannel.closed || ctx.signal.aborted) return;
+          throw err;
+        }
+
+        try {
+          await opts.fix(reason)(ctx);
+          await fixDone.send(undefined, ctx.signal);
+        } catch (err) {
+          lastFixError = err instanceof Error ? err : new Error(String(err));
+          ctx.trace.emit({
+            type: "fix_end",
+            runId: ctx.runId,
+            success: false,
+            ts: Date.now(),
+          });
+          fixDone.close();
+          fixChannel.close();
+          throw lastFixError;
         }
       }
     })();
@@ -255,10 +270,12 @@ export function branchFix<T>(opts: {
       const result = await mainPromise;
       fixChannel.close();
       fixDone.close();
+      await fixListenerPromise.catch(() => {});
       return result;
     } catch (err) {
       fixChannel.close();
       fixDone.close();
+      await fixListenerPromise.catch(() => {});
       throw err;
     }
   };
@@ -298,35 +315,45 @@ export function replicate<T>(
 ): Process<void> {
   return async (ctx) => {
     while (!ctx.signal.aborted && !trigger.closed) {
+      let value: T;
       try {
-        const value = await trigger.receive();
-        const childId = freshId("repl");
+        value = await trigger.receive(ctx.signal);
+      } catch (err) {
+        if (trigger.closed || ctx.signal.aborted) break;
+        const error = err instanceof Error ? err : new Error(String(err));
+        if (error.message.includes("closed")) break;
         ctx.trace.emit({
-          type: "spawn",
-          runId: childId,
-          parentId: ctx.runId,
-          name: "replicated",
+          type: "error",
+          runId: ctx.runId,
+          error: error.message,
           ts: Date.now(),
         });
-
-        const childCtx: ProcessContext = {
-          ...ctx,
-          runId: childId,
-          parentId: ctx.runId,
-        };
-
-        // Fire and forget — each replica runs independently
-        handler(value)(childCtx).catch((err) => {
-          ctx.trace.emit({
-            type: "error",
-            runId: childId,
-            error: String(err),
-            ts: Date.now(),
-          });
-        });
-      } catch {
-        break;
+        throw error;
       }
+
+      const childId = freshId("repl");
+      ctx.trace.emit({
+        type: "spawn",
+        runId: childId,
+        parentId: ctx.runId,
+        name: "replicated",
+        ts: Date.now(),
+      });
+
+      const childCtx: ProcessContext = {
+        ...ctx,
+        runId: childId,
+        parentId: ctx.runId,
+      };
+
+      handler(value)(childCtx).catch((err) => {
+        ctx.trace.emit({
+          type: "error",
+          runId: childId,
+          error: String(err),
+          ts: Date.now(),
+        });
+      });
     }
   };
 }

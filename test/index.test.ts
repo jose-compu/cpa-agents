@@ -18,5 +18,8 @@ describe("index exports", () => {
     assert.equal(typeof api.fanOut, "function");
     assert.equal(typeof api.pipeline, "function");
     assert.equal(typeof api.handoff, "function");
+    assert.equal(typeof api.parseJsonl, "function");
+    assert.equal(typeof api.loadJsonlTree, "function");
+    assert.equal(typeof api.eventsToSessionTree, "function");
   });
 });

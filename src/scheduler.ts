@@ -8,35 +8,68 @@
  * - Graceful shutdown via AbortController
  */
 
-import { Channel, freshId } from "./channel.js";
+import { freshId } from "./channel.js";
 import {
   type Process,
   type ProcessContext,
   type TraceCollector,
+  type TraceEvent,
   TraceCollector as TraceCollectorImpl,
 } from "./process.js";
+import { JsonlTraceSink } from "./jsonl.js";
 
 export interface SchedulerOpts {
   /** Timeout for the entire process tree (ms) */
   timeout?: number;
   /** Callback when a trace event is emitted */
-  onTrace?: (event: import("./process.js").TraceEvent) => void;
+  onTrace?: (event: TraceEvent) => void;
 }
 
 export class Scheduler {
   private abortController: AbortController;
   private trace: TraceCollectorImpl;
   private opts: SchedulerOpts;
+  private jsonlSink?: JsonlTraceSink;
+  private onTraceListeners: Array<(event: TraceEvent) => void>;
 
   constructor(opts: SchedulerOpts = {}) {
     this.abortController = new AbortController();
     this.opts = opts;
+    this.onTraceListeners = opts.onTrace ? [opts.onTrace] : [];
+    const listeners = this.onTraceListeners;
     this.trace = new (class extends TraceCollectorImpl {
-      emit(event: import("./process.js").TraceEvent): void {
+      emit(event: TraceEvent): void {
         super.emit(event);
-        opts.onTrace?.(event);
+        for (const listener of listeners) {
+          listener(event);
+        }
       }
     })();
+  }
+
+  /**
+   * Append trace events to a JSONL file as they fire.
+   * Returns a handle to flush and close the sink.
+   */
+  attachJsonl(path: string): { close: () => Promise<void> } {
+    this.jsonlSink = new JsonlTraceSink(path);
+    const listener = (event: TraceEvent) => {
+      this.jsonlSink?.append(event);
+    };
+    this.onTraceListeners.push(listener);
+    return {
+      close: async () => {
+        await this.jsonlSink?.close();
+        this.jsonlSink = undefined;
+        const idx = this.onTraceListeners.indexOf(listener);
+        if (idx >= 0) this.onTraceListeners.splice(idx, 1);
+      },
+    };
+  }
+
+  /** Read-only access to the live trace collector. */
+  get traceCollector(): TraceCollector {
+    return this.trace;
   }
 
   /**

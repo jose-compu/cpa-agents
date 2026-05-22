@@ -161,4 +161,69 @@ describe("select", () => {
     fast.close();
     slow.close();
   });
+
+  it("does not leave orphan receivers on losing channels", async () => {
+    const winner = new Channel<string>("winner");
+    const loser = new Channel<string>("loser");
+
+    const selectPromise = select(
+      { channel: winner, handler: () => {} },
+      { channel: loser, handler: () => {} }
+    );
+
+    await winner.send("go");
+    await selectPromise;
+
+    const recvPromise = loser.receive();
+    await loser.send("late");
+    const received = await recvPromise;
+    assert.equal(received, "late");
+
+    winner.close();
+    loser.close();
+  });
+});
+
+describe("Channel abort", () => {
+  it("receive rejects when signal is already aborted", async () => {
+    const ch = new Channel<number>("abort-recv");
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(() => ch.receive(controller.signal), /Abort/i);
+    ch.close();
+  });
+
+  it("send rejects when signal is already aborted", async () => {
+    const ch = new Channel<number>("abort-send");
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(() => ch.send(1, controller.signal), /Abort/i);
+    ch.close();
+  });
+
+  it("receive is cancelled while waiting", async () => {
+    const ch = new Channel<number>("abort-wait-recv");
+    const controller = new AbortController();
+
+    const pending = ch.receive(controller.signal);
+    await new Promise((r) => setTimeout(r, 5));
+    controller.abort();
+
+    await assert.rejects(() => pending, /Abort/i);
+    ch.close();
+  });
+
+  it("send is cancelled while waiting", async () => {
+    const ch = new Channel<number>("abort-wait-send");
+    const controller = new AbortController();
+
+    const pending = ch.send(42, controller.signal);
+    await new Promise((r) => setTimeout(r, 5));
+    controller.abort();
+
+    await assert.rejects(() => pending, /Abort/i);
+    ch.close();
+  });
 });

@@ -58,6 +58,19 @@ export {
 // Scheduler
 export { Scheduler, type SchedulerOpts, type SchedulerResult } from "./scheduler.js";
 
+// JSONL trace serialization
+export {
+  traceEventToJsonl,
+  parseJsonl,
+  serializeTraceEvents,
+  eventsToSessionTree,
+  loadJsonl,
+  loadJsonlTree,
+  JsonlTraceSink,
+} from "./jsonl.js";
+
+export { sessionTreeToMarkdown } from "./session-tree.js";
+
 // Fork algebra (relational layer)
 export {
   type Relation,
