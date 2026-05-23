@@ -1,0 +1,113 @@
+{
+  "name": "cpa-agents",
+  "version": "0.3.0",
+  "description": "Concurrent Process Algebra for AI Agents — π-calculus primitives for Pi Harness and OpenClaw.",
+  "license": "MIT",
+  "repository": "https://github.com/jose-compu/cpa-agents",
+  "exports": [
+    {
+      "path": "cpa-agents",
+      "description": "Core process algebra, fork algebra, operators, scheduler, and JSONL trace utilities",
+      "symbols": [
+        "Channel",
+        "freshId",
+        "select",
+        "par",
+        "seq",
+        "choice",
+        "branchFix",
+        "restrict",
+        "replicate",
+        "supervisor",
+        "agentProcess",
+        "codeThenFix",
+        "fanOut",
+        "pipeline",
+        "handoff",
+        "Scheduler",
+        "parseJsonl",
+        "loadJsonl",
+        "loadJsonlTree",
+        "eventsToSessionTree",
+        "JsonlTraceSink",
+        "sessionTreeToMarkdown",
+        "rel",
+        "detRel",
+        "compose",
+        "fork",
+        "forkN",
+        "converse",
+        "meet",
+        "join",
+        "toProcess",
+        "forkToProcess",
+        "and",
+        "or",
+        "pipe",
+        "saga",
+        "invertible",
+        "retryWithBackoff",
+        "timeout",
+        "guard"
+      ]
+    },
+    {
+      "path": "cpa-agents/adapters/pi",
+      "description": "Pi Coding Agent extension — commands, bridge wiring, session tree export",
+      "symbols": [
+        "createPiCpaExtension",
+        "configurePiBridge",
+        "piSubAgent",
+        "piTool",
+        "sessionTreeToMarkdown"
+      ]
+    },
+    {
+      "path": "cpa-agents/adapters/openclaw",
+      "description": "OpenClaw skill — parallel, branch-fix, fan-out, retry, saga commands",
+      "symbols": [
+        "createOpenClawSkill",
+        "configureOpenClawBridge",
+        "sessionTreeToMarkdown",
+        "SKILL_MD"
+      ]
+    }
+  ],
+  "commands": {
+    "openclaw": [
+      { "name": "cpa:parallel", "description": "Run independent tasks concurrently" },
+      { "name": "cpa:branch-fix", "description": "Run task, branch into fix subprocess, continue" },
+      { "name": "cpa:fan-out", "description": "Same task across multiple models, merge results" },
+      { "name": "cpa:retry", "description": "Retry with exponential backoff" },
+      { "name": "cpa:fallback", "description": "Primary task with fallback on failure" },
+      { "name": "cpa:saga", "description": "Transactional workflow with compensating actions" },
+      { "name": "cpa:status", "description": "Inspect scheduler state and last session tree" }
+    ],
+    "pi": [
+      { "name": "cpa:par", "description": "Parallel composition of sub-agent tasks" },
+      { "name": "cpa:fix", "description": "Branch-fix-continue workflow" },
+      { "name": "cpa:tree", "description": "Live session tree and markdown export" },
+      { "name": "cpa:retry", "description": "Retry with backoff" },
+      { "name": "cpa:fallback", "description": "Primary with fallback" },
+      { "name": "cpa:saga", "description": "Saga with compensating actions" },
+      { "name": "cpa:fan-out", "description": "Multi-model fan-out" }
+    ]
+  },
+  "layers": [
+    {
+      "name": "Process algebra",
+      "mapping": "π-calculus",
+      "primitives": ["Channel", "par", "seq", "choice", "branchFix", "restrict", "replicate", "supervisor"]
+    },
+    {
+      "name": "Fork algebra",
+      "mapping": "Relational composition",
+      "primitives": ["rel", "compose", "fork", "meet", "join", "toProcess"]
+    },
+    {
+      "name": "Operator algebra",
+      "mapping": "Shell-style control flow",
+      "primitives": ["and", "or", "pipe", "saga", "invertible", "retryWithBackoff", "timeout", "guard"]
+    }
+  ]
+}

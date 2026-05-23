@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="cpa-agents v0.3.0 — Concurrent Process Algebra for AI Agents. π-calculus primitives for Pi Harness, OpenClaw, and standalone TypeScript workflows." />
+    <title>cpa-agents · Documentation</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./assets/highlight/github.min.css" media="(prefers-color-scheme: light)" />
+    <link rel="stylesheet" href="./assets/highlight/github-dark.min.css" media="(prefers-color-scheme: dark)" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-header__brand" href="#overview">
+        <img src="./assets/logo.svg" alt="cpa-agents" width="320" height="72" />
+        <span class="site-header__version">v0.3.0</span>
+      </a>
+      <div class="site-header__links">
+        <a href="https://www.npmjs.com/package/cpa-agents" target="_blank" rel="noopener noreferrer">npm</a>
+        <a href="https://github.com/jose-compu/cpa-agents" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="./openapi-like.json">API JSON</a>
+      </div>
+      <button class="menu-toggle" type="button" aria-label="Toggle navigation">Menu</button>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar__group">
+          <div class="sidebar__label">Getting started</div>
+          <nav>
+            <a href="#overview">Overview</a>
+            <a href="#installation">Installation</a>
+            <a href="#quick-start">Quick start</a>
+            <a href="#architecture">Architecture</a>
+          </nav>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__label">Algebra layers</div>
+          <nav>
+            <a href="#process-algebra">Process algebra</a>
+            <a href="#branch-fix">Branch-fix-continue</a>
+            <a href="#fork-algebra">Fork algebra</a>
+            <a href="#operators">Operator algebra</a>
+          </nav>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__label">Integration</div>
+          <nav>
+            <a href="#openclaw">OpenClaw</a>
+            <a href="#pi-harness">Pi Harness</a>
+            <a href="#session-tree">Session tree &amp; JSONL</a>
+          </nav>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__label">Reference</div>
+          <nav>
+            <a href="#exports">Package exports</a>
+            <a href="#development">Development</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="content">
+        <div class="content__inner">
+          <section id="overview" class="section">
+            <h1 class="page-title">Documentation</h1>
+            <p class="lead">
+              <strong>cpa-agents</strong> applies concurrent process algebra to AI agent orchestration.
+              Three layers — process algebra, fork algebra, and operator algebra — provide typed primitives
+              for parallelism, communication, fix-and-resume branching, and provenance-aware workflows.
+            </p>
+
+            <div class="card-grid">
+              <article class="card">
+                <h3>π-calculus core</h3>
+                <p>Channels, parallel composition, external choice, scoped names, and replication — mapped to agent tasks.</p>
+              </article>
+              <article class="card">
+                <h3>Host adapters</h3>
+                <p>Drop-in extensions for <a href="https://github.com/earendil-works/pi">Pi Coding Agent</a> and <a href="https://github.com/openclaw/openclaw">OpenClaw</a>.</p>
+              </article>
+              <article class="card">
+                <h3>Live session trees</h3>
+                <p>Every run emits a hierarchical execution tree and flat trace — exportable as JSONL or Markdown.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="installation" class="section">
+            <h2>Installation</h2>
+            <div class="code-block">
+              <span class="code-block__label">npm</span>
+              <pre><code class="language-bash">npm install cpa-agents</code></pre>
+            </div>
+            <p>Zero runtime dependencies. TypeScript types ship with the package.</p>
+          </section>
+
+          <section id="quick-start" class="section">
+            <h2>Quick start</h2>
+            <p>Run two agent tasks in parallel with a shared scheduler:</p>
+            <div class="code-block">
+              <span class="code-block__label">TypeScript / ESM</span>
+              <pre><code class="language-typescript">import { Scheduler, par, agentProcess } from "cpa-agents";
+
+const scheduler = new Scheduler({ timeout: 60_000 });
+
+const research = par(
+  agentProcess(webSearchAgent, "latest React patterns"),
+  agentProcess(codeSearchAgent, "auth middleware examples"),
+);
+
+const result = await scheduler.run("research", research);
+console.log(result.sessionTree);</code></pre>
+            </div>
+            <div class="callout">
+              <strong>Why process algebra?</strong>
+              Most agent harnesses use ad-hoc control flow. This library gives formal, composable semantics for concurrency, synchronization, and rollback-aware workflows.
+            </div>
+          </section>
+
+          <section id="architecture" class="section">
+            <h2>Architecture</h2>
+            <figure class="figure">
+              <img src="./assets/concurrent_process_algebra_architecture.svg" alt="Three-layer architecture: process algebra, fork algebra, operator algebra" width="960" height="540" />
+              <figcaption>Three algebra layers compose from π-calculus primitives up to shell-style control flow.</figcaption>
+            </figure>
+          </section>
+
+          <section id="process-algebra" class="section">
+            <h2>Process algebra</h2>
+            <p>Core runtime mapped from π-calculus:</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>π-calculus</th>
+                    <th>cpa-agents</th>
+                    <th>What it does</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>ā⟨v⟩.P</code></td>
+                    <td><code>ch.send(v)</code></td>
+                    <td>Send value on channel, then continue</td>
+                  </tr>
+                  <tr>
+                    <td><code>a(x).P</code></td>
+                    <td><code>ch.receive()</code></td>
+                    <td>Receive value from channel, then continue</td>
+                  </tr>
+                  <tr>
+                    <td><code>P | Q</code></td>
+                    <td><code>par(P, Q)</code></td>
+                    <td>Run P and Q concurrently</td>
+                  </tr>
+                  <tr>
+                    <td><code>P + Q</code></td>
+                    <td><code>choice([...])</code></td>
+                    <td>Wait for first channel that fires</td>
+                  </tr>
+                  <tr>
+                    <td><code>ν(x).P</code></td>
+                    <td><code>restrict(name, body)</code></td>
+                    <td>Create a fresh scoped channel</td>
+                  </tr>
+                  <tr>
+                    <td><code>!P</code></td>
+                    <td><code>replicate(trigger, handler)</code></td>
+                    <td>Spawn new P for each incoming message</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>Key exports: <code>Channel</code>, <code>select</code>, <code>par</code>, <code>seq</code>, <code>choice</code>, <code>branchFix</code>, <code>restrict</code>, <code>replicate</code>, <code>supervisor</code>, <code>Scheduler</code>.</p>
+          </section>
+
+          <section id="branch-fix" class="section">
+            <h2>Branch-fix-continue</h2>
+            <p>Pattern for run → detect error → fix → resume:</p>
+            <div class="code-block">
+              <pre><code class="language-typescript">import { branchFix, Scheduler } from "cpa-agents";
+
+const workflow = branchFix&lt;string&gt;({
+  name: "implement-feature",
+  maxFixes: 3,
+
+  main: (requestFix) =&gt; async (ctx) =&gt; {
+    const code = await coder.invoke("add auth middleware", ctx.signal);
+    const check = await linter.invoke(code, ctx.signal);
+
+    if (!check.pass) {
+      await requestFix(check.errors.join("; "));
+    }
+
+    return code;
+  },
+
+  fix: (reason) =&gt; async (ctx) =&gt; {
+    await fixer.invoke(reason, ctx.signal);
+  },
+});
+
+const scheduler = new Scheduler({ timeout: 60_000 });
+const result = await scheduler.run("feature", workflow);</code></pre>
+            </div>
+          </section>
+
+          <section id="fork-algebra" class="section">
+            <h2>Fork algebra</h2>
+            <p>Relational composition and paired derivations over the same input:</p>
+            <div class="code-block">
+              <pre><code class="language-typescript">import { rel, fork, compose, meet, join, toProcess } from "cpa-agents";
+
+const parse = rel("parse", async (input: string) =&gt; [input.trim()]);
+const enrich = rel("enrich", async (input: string) =&gt; [`${input}:meta`]);
+const validate = rel("validate", async (input: string) =&gt;
+  [input.length &gt; 0 ? "ok" : "bad"]
+);
+
+const composed = compose(parse, enrich);
+const paired = fork(enrich, validate);
+const proc = toProcess(composed, "task payload", "all");</code></pre>
+            </div>
+            <p>Key exports: <code>rel</code>, <code>detRel</code>, <code>compose</code>, <code>fork</code>, <code>forkN</code>, <code>converse</code>, <code>meet</code>, <code>join</code>, <code>toProcess</code>, <code>forkToProcess</code>, <code>verifyAxioms</code>.</p>
+          </section>
+
+          <section id="operators" class="section">
+            <h2>Operator algebra</h2>
+            <p>Shell-style and reliability-focused control flow:</p>
+            <div class="code-block">
+              <pre><code class="language-typescript">import {
+  and, or, pipe, saga, invertible,
+  retryWithBackoff, timeout,
+} from "cpa-agents";
+
+const guardedDeploy = and(buildProcess, deployProcess);
+const withFallback = or(primaryProcess, fallbackProcess);
+const piped = pipe(fetchProcess, (data) =&gt; transformProcess(data));
+
+const transactional = saga([
+  invertible(createBranch, deleteBranch),
+  invertible(writeChanges, revertChanges),
+  invertible(runChecks, cleanupChecks),
+]);
+
+const resilient = retryWithBackoff({
+  process: timeout(30_000, transactional),
+  maxAttempts: 3,
+});</code></pre>
+            </div>
+          </section>
+
+          <section id="openclaw" class="section">
+            <h2>OpenClaw integration</h2>
+            <div class="code-block">
+              <span class="code-block__label">~/.openclaw/skills/cpa-agents/index.ts</span>
+              <pre><code class="language-typescript">import { createOpenClawSkill } from "cpa-agents/adapters/openclaw";
+export default createOpenClawSkill();</code></pre>
+            </div>
+            <h3>Commands</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Command</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>cpa:parallel</code></td><td>Run independent tasks concurrently</td></tr>
+                  <tr><td><code>cpa:branch-fix</code></td><td>Run, detect errors, fix, continue</td></tr>
+                  <tr><td><code>cpa:fan-out</code></td><td>Same task across multiple models</td></tr>
+                  <tr><td><code>cpa:retry</code></td><td>Exponential backoff retries</td></tr>
+                  <tr><td><code>cpa:fallback</code></td><td>Primary with fallback on failure</td></tr>
+                  <tr><td><code>cpa:saga</code></td><td>Transactional workflow with compensating actions</td></tr>
+                  <tr><td><code>cpa:status</code></td><td>Inspect scheduler state and session tree</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p>Skill authoring reference: <code>skills/cpa-agents/SKILL.md</code> in the repository.</p>
+          </section>
+
+          <section id="pi-harness" class="section">
+            <h2>Pi Harness integration</h2>
+            <p>Pi upstream: <a href="https://github.com/earendil-works/pi">earendil-works/pi</a>. The adapter targets the extension API and expects <code>piCtx.agent.run(task)</code>.</p>
+            <div class="code-block">
+              <span class="code-block__label">.pi/extensions/cpa.ts</span>
+              <pre><code class="language-typescript">import { createPiCpaExtension } from "cpa-agents/adapters/pi";
+export default createPiCpaExtension();</code></pre>
+            </div>
+            <p>Extension commands: <code>cpa:par</code>, <code>cpa:fix</code>, <code>cpa:tree</code>, <code>cpa:retry</code>, <code>cpa:fallback</code>, <code>cpa:saga</code>, <code>cpa:fan-out</code>.</p>
+            <div class="code-block">
+              <span class="code-block__label">Standalone bridge wiring</span>
+              <pre><code class="language-typescript">import { configurePiBridge, piSubAgent } from "cpa-agents/adapters/pi";
+
+configurePiBridge({
+  runSubAgent: async ({ prompt }, signal) =&gt; host.run(prompt, { signal }),
+  runTool: async ({ tool, args }, signal) =&gt; host.runTool(tool, args, { signal }),
+});</code></pre>
+            </div>
+          </section>
+
+          <section id="session-tree" class="section">
+            <h2>Session tree &amp; JSONL</h2>
+            <p>Every scheduler run emits a hierarchical <code>sessionTree</code> and flat <code>trace</code>. Persist traces as Pi-compatible JSONL:</p>
+            <div class="code-block">
+              <pre><code class="language-typescript">import { Scheduler, loadJsonlTree, eventsToSessionTree } from "cpa-agents";
+
+const scheduler = new Scheduler();
+const sink = scheduler.attachJsonl("./session.jsonl");
+
+const result = await scheduler.run("workflow", myProcess);
+await sink.close();
+
+const tree = await loadJsonlTree("./session.jsonl");
+// or: eventsToSessionTree(result.trace.events)</code></pre>
+            </div>
+          </section>
+
+          <section id="exports" class="section">
+            <h2>Package exports</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Import path</th>
+                    <th>Primary exports</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>cpa-agents</code></td>
+                    <td>Process algebra, fork algebra, operators, scheduler, JSONL utilities</td>
+                  </tr>
+                  <tr>
+                    <td><code>cpa-agents/adapters/pi</code></td>
+                    <td><code>createPiCpaExtension</code>, <code>configurePiBridge</code>, <code>piSubAgent</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>cpa-agents/adapters/openclaw</code></td>
+                    <td><code>createOpenClawSkill</code>, <code>configureOpenClawBridge</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>Machine-readable metadata: <a href="./openapi-like.json">openapi-like.json</a></p>
+          </section>
+
+          <section id="development" class="section">
+            <h2>Development</h2>
+            <div class="code-block">
+              <pre><code class="language-bash"># Typecheck
+npm run check
+
+# Run tests (93+ cases, ~96% coverage)
+npm test
+
+# Coverage gate
+npm run coverage
+
+# Build
+npm run build
+
+# Serve docs locally
+npm run docs:serve</code></pre>
+            </div>
+          </section>
+
+          <footer class="site-footer">
+            <p>
+              cpa-agents v0.3.0 ·
+              <a href="https://github.com/jose-compu/cpa-agents/blob/main/LICENSE">MIT</a> ·
+              <a href="https://github.com/jose-compu/cpa-agents">GitHub</a> ·
+              <a href="https://www.npmjs.com/package/cpa-agents">npm</a>
+            </p>
+          </footer>
+        </div>
+      </main>
+    </div>
+
+    <script src="./assets/highlight/highlight.min.js"></script>
+    <script src="./assets/docs.js"></script>
+  </body>
+</html>

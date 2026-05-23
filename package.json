@@ -25,6 +25,7 @@
     "test": "tsx --test test/*.test.ts",
     "coverage": "c8 --all --include='src/**/*.ts' --reporter=text --check-coverage --lines 80 --branches 80 --functions 80 --statements 80 npm test",
     "check": "tsc --noEmit",
+    "docs:serve": "npx --yes serve docs -p 4173",
     "prepublishOnly": "npm run check && npm run build && npm test && npm run coverage"
   },
   "files": [

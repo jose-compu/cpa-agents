@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" fill="none" role="img" aria-label="cpa-agents">
+  <text x="0" y="48" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="36" font-weight="700" fill="#1e1b4b">cpa</text>
+  <text x="78" y="48" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="36" font-weight="400" fill="#6d28d9">-agents</text>
+  <text x="0" y="66" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="11" font-weight="500" letter-spacing="0.08em" fill="#64748b">CONCURRENT PROCESS ALGEBRA</text>
+</svg>
