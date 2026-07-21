@@ -6,6 +6,7 @@ describe("index exports", () => {
   it("re-exports core API symbols", () => {
     assert.equal(typeof api.Channel, "function");
     assert.equal(typeof api.par, "function");
+    assert.equal(typeof api.mapPar, "function");
     assert.equal(typeof api.seq, "function");
     assert.equal(typeof api.choice, "function");
     assert.equal(typeof api.branchFix, "function");

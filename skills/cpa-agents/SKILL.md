@@ -1,7 +1,7 @@
 # CPA Agents for OpenClaw
 
-**Skill version:** 2.1.0  
-**Requires:** `cpa-agents@0.3.0` or newer
+**Skill version:** 2.2.0  
+**Requires:** `cpa-agents@0.4.0` or newer
 
 Use concurrent process algebra for multi-agent orchestration in OpenClaw: parallel execution,
 branch-fix loops, model fan-out, retries, fallbacks, rollback sagas, and session-tree introspection.
@@ -11,7 +11,7 @@ branch-fix loops, model fan-out, retries, fallbacks, rollback sagas, and session
 ### 1) Install library
 
 ```bash
-npm install cpa-agents@0.3.0
+npm install cpa-agents@0.4.0
 ```
 
 ### 2) Create skill entrypoint
@@ -25,7 +25,7 @@ export default createOpenClawSkill();
 The skill object exposes:
 
 - `name` — `"cpa-agents"`
-- `version` — library version from the installed package (e.g. `0.3.0`; distinct from this skill doc **2.1.0**)
+- `version` — library version from the installed package (e.g. `0.4.0`; distinct from this skill doc **2.2.0**)
 - `skillMd` — embedded markdown reference
 - `handleCommand(command, args, openclawCtx)` — runs CPA workflows
 
@@ -223,6 +223,26 @@ In OpenClaw, prefer streaming via `session.appendEvent` during `handleCommand` r
 ## Advanced operators (library API)
 
 Use these in custom TypeScript workflows via `cpa-agents` core exports.
+
+### Bounded concurrent map (`mapPar`)
+
+Fan out over an array with a concurrency cap (unlike fixed-arity `par`):
+
+```ts
+import { mapPar, Scheduler } from "cpa-agents";
+
+const workflow = mapPar(
+  tasks,
+  (task) => async (ctx) => agent.run(task, { signal: ctx.signal }),
+  { concurrency: 3, failFast: true }
+);
+
+const result = await new Scheduler().run("batch", workflow);
+```
+
+- Preserves input order in the result array
+- Emits `mapPar[i]` spawn/done traces per item
+- Respects `ctx.signal`
 
 ### Undo / rollback (`invertible` + `saga`)
 

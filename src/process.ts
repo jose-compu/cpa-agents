@@ -121,6 +121,121 @@ export function par<T extends any[]>(
   };
 }
 
+export interface MapParOpts {
+  /** Max items in flight at once. Defaults to `items.length` (unbounded). */
+  concurrency?: number;
+  /**
+   * When true (default), stop starting new work after the first rejection
+   * and reject as soon as that error is observed.
+   * When false, wait for all items, then reject with the first error.
+   */
+  failFast?: boolean;
+}
+
+/**
+ * Map over an array with bounded concurrency.
+ *
+ * Preserves input order in the result array. Emits `spawn`/`done` (or `error`)
+ * per item with a stable index in the child name (`mapPar[i]`).
+ * Respects `ctx.signal`.
+ */
+export function mapPar<I, O>(
+  items: readonly I[],
+  fn: (item: I, index: number) => Process<O>,
+  opts?: MapParOpts
+): Process<O[]> {
+  return async (ctx) => {
+    if (items.length === 0) return [];
+
+    const concurrency = Math.max(1, opts?.concurrency ?? items.length);
+    const failFast = opts?.failFast !== false;
+    const results: O[] = new Array(items.length);
+    let nextIndex = 0;
+    let inFlight = 0;
+    let settled = 0;
+    let firstError: unknown;
+
+    return new Promise<O[]>((resolve, reject) => {
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (firstError !== undefined) reject(firstError);
+        else resolve(results);
+      };
+
+      const launch = () => {
+        if (finished) return;
+
+        if (ctx.signal.aborted) {
+          if (firstError === undefined) {
+            firstError = new Error("Process aborted");
+          }
+          if (inFlight === 0) finish();
+          return;
+        }
+
+        while (
+          inFlight < concurrency &&
+          nextIndex < items.length &&
+          !(failFast && firstError !== undefined)
+        ) {
+          const index = nextIndex++;
+          inFlight++;
+          void runItem(index);
+        }
+
+        // All items settled, or fail-fast drained in-flight work without
+        // starting the remaining indices.
+        if (
+          settled === items.length ||
+          (failFast && firstError !== undefined && inFlight === 0)
+        ) {
+          finish();
+        }
+      };
+
+      const runItem = async (index: number) => {
+        const childId = freshId("mapPar");
+        ctx.trace.emit({
+          type: "spawn",
+          runId: childId,
+          parentId: ctx.runId,
+          name: `mapPar[${index}]`,
+          ts: Date.now(),
+        });
+
+        const childCtx: ProcessContext = {
+          ...ctx,
+          runId: childId,
+          parentId: ctx.runId,
+        };
+
+        try {
+          if (ctx.signal.aborted) throw new Error("Process aborted");
+          const value = await fn(items[index]!, index)(childCtx);
+          ctx.trace.emit({ type: "done", runId: childId, ts: Date.now() });
+          results[index] = value;
+        } catch (err) {
+          ctx.trace.emit({
+            type: "error",
+            runId: childId,
+            error: err instanceof Error ? err.message : String(err),
+            ts: Date.now(),
+          });
+          if (firstError === undefined) firstError = err;
+        } finally {
+          inFlight--;
+          settled++;
+          launch();
+        }
+      };
+
+      launch();
+    });
+  };
+}
+
 /**
  * Sequential composition: P ; Q
  * Runs processes one after another, threading context.
