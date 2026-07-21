@@ -6,6 +6,7 @@ import {
   type ProcessContext,
   TraceCollector,
   par,
+  mapPar,
   seq,
   choice,
   branchFix,
@@ -50,6 +51,144 @@ describe("par", () => {
     const spawns = scheduler.getTrace().filter((e) => e.type === "spawn");
     // root + 2 par children
     assert.ok(spawns.length >= 3);
+  });
+});
+
+describe("mapPar", () => {
+  it("preserves input order in results", async () => {
+    const items = [3, 1, 2];
+    const proc = mapPar(items, (n) => async () => {
+      await delay(n * 10);
+      return n * 10;
+    });
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("mapPar-order", proc);
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, [30, 10, 20]);
+    }
+  });
+
+  it("honours concurrency limit", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const items = [1, 2, 3, 4, 5, 6];
+
+    const proc = mapPar(
+      items,
+      () => async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await delay(30);
+        inFlight--;
+        return 1;
+      },
+      { concurrency: 2 }
+    );
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("mapPar-concurrency", proc);
+
+    assert.ok(result.success);
+    assert.ok(peak <= 2, `peak concurrency was ${peak}`);
+    assert.ok(peak >= 2, "expected some parallelism");
+  });
+
+  it("emits spawn/done with stable index names", async () => {
+    const proc = mapPar([10, 20], (n) => async () => n);
+    const scheduler = makeScheduler();
+    await scheduler.run("mapPar-trace", proc);
+
+    const spawns = scheduler
+      .getTrace()
+      .filter((e) => e.type === "spawn" && e.name.startsWith("mapPar["));
+    assert.deepEqual(
+      spawns.map((e) => (e.type === "spawn" ? e.name : "")),
+      ["mapPar[0]", "mapPar[1]"]
+    );
+
+    const doneIds = new Set(
+      scheduler.getTrace().filter((e) => e.type === "done").map((e) => e.runId)
+    );
+    for (const spawn of spawns) {
+      assert.ok(doneIds.has(spawn.runId));
+    }
+  });
+
+  it("fail-fast stops launching new work after first rejection", async () => {
+    const started: number[] = [];
+    const items = [0, 1, 2, 3, 4];
+
+    const proc = mapPar(
+      items,
+      (n) => async () => {
+        started.push(n);
+        await delay(20);
+        if (n === 1) throw new Error("boom");
+        return n;
+      },
+      { concurrency: 1, failFast: true }
+    );
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("mapPar-failfast", proc);
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.equal(result.error.message, "boom");
+    }
+    assert.ok(started.includes(0));
+    assert.ok(started.includes(1));
+    assert.ok(!started.includes(4), "should not start later items after failure");
+  });
+
+  it("failFast:false waits for all items then rejects", async () => {
+    const started: number[] = [];
+    const items = [0, 1, 2];
+
+    const proc = mapPar(
+      items,
+      (n) => async () => {
+        started.push(n);
+        await delay(10);
+        if (n === 1) throw new Error("mid-fail");
+        return n;
+      },
+      { concurrency: 3, failFast: false }
+    );
+
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("mapPar-collect", proc);
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.equal(result.error.message, "mid-fail");
+    }
+    assert.deepEqual(started.sort(), [0, 1, 2]);
+  });
+
+  it("returns empty array for empty input", async () => {
+    const proc = mapPar([], () => async () => 1);
+    const scheduler = makeScheduler();
+    const result = await scheduler.run("mapPar-empty", proc);
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, []);
+    }
+  });
+
+  it("respects abort signal", async () => {
+    const scheduler = new Scheduler({ timeout: 30 });
+    const proc = mapPar([1, 2, 3], () => async () => {
+      await delay(200);
+      return 1;
+    }, { concurrency: 1 });
+
+    const result = await scheduler.run("mapPar-abort", proc);
+    assert.ok(!result.success);
   });
 });
 

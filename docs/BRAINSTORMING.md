@@ -14,7 +14,7 @@ I've made it through the main library files - all typed, compiling, and structur
 
 Here's the π-calculus mapping to AI agent patterns:
 
-**Primitives** — `Channel<T>` (typed, synchronous rendezvous), `par(P, Q)` (parallel composition), `seq(P, Q)` (sequential), `choice([...])` (external choice on guard channels), `restrict(name, body)` (scoped channel creation — ν(x).P), `replicate(trigger, handler)` (server pattern — !P).
+**Primitives** — `Channel<T>` (typed, synchronous rendezvous), `par(P, Q)` (parallel composition), `mapPar(items, fn, opts)` (bounded concurrent map), `seq(P, Q)` (sequential), `choice([...])` (external choice on guard channels), `restrict(name, body)` (scoped channel creation — ν(x).P), `replicate(trigger, handler)` (server pattern — !P).
 
 **The branch-fix-continue pattern** you described — `branchFix({ main, fix })`. The main process runs, and when it hits a problem it calls `requestFix(reason)` which pauses main via channel rendezvous, runs the fix process, then resumes main exactly where it left off. This is the session tree branching Pi Harness does, but formalized.
 
@@ -28,7 +28,7 @@ The files are in `/home/claude/cpa-agents/`. The OpenClaw adapter needs the same
 
 Here's what's in the package:
 
-**Core** (4 files): `channel.ts` (typed rendezvous channels with mobility — you can send channels over channels), `process.ts` (all the combinators: `par`, `seq`, `choice`, `branchFix`, `restrict`, `replicate`, `supervisor`), `agent.ts` (bridges LLM calls into the algebra: `agentProcess`, `codeThenFix`, `fanOut`, `pipeline`, `handoff`), `scheduler.ts` (runs process trees with timeout, trace collection, abort).
+**Core** (4 files): `channel.ts` (typed rendezvous channels with mobility — you can send channels over channels), `process.ts` (all the combinators: `par`, `mapPar`, `seq`, `choice`, `branchFix`, `restrict`, `replicate`, `supervisor`), `agent.ts` (bridges LLM calls into the algebra: `agentProcess`, `codeThenFix`, `fanOut`, `pipeline`, `handoff`), `scheduler.ts` (runs process trees with timeout, trace collection, abort).
 
 **Adapters** (2 files): `pi-harness.ts` exposes `/cpa:par`, `/cpa:fix`, `/cpa:tree` as Pi extension commands. `openclaw.ts` registers as an OpenClaw skill with `parallel`, `branch-fix`, `fan-out`, `status` commands plus Markdown session tree serialization for OpenClaw's workspace files.
 

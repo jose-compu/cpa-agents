@@ -9,6 +9,7 @@
  * - Channel<T>: typed communication (π-calculus names)
  * - Process<T>: unit of computation
  * - par(P, Q): parallel composition (P | Q)
+ * - mapPar(items, fn, opts): bounded concurrent map over an array
  * - seq(P, Q): sequential composition (P ; Q)
  * - choice([...branches]): external choice (P + Q)
  * - branchFix({ main, fix }): branch-to-fix-then-continue
@@ -35,12 +36,14 @@ export {
   type SessionNode,
   TraceCollector,
   par,
+  mapPar,
   seq,
   choice,
   branchFix,
   restrict,
   replicate,
   supervisor,
+  type MapParOpts,
 } from "./process.js";
 
 // Agent wrappers

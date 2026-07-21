@@ -51,8 +51,28 @@ Most agent harnesses implement orchestration with ad-hoc control flow and minima
 
 Core runtime exports:
 - `Channel`, `select`
-- `par`, `seq`, `choice`, `branchFix`, `restrict`, `replicate`, `supervisor`
+- `par`, `mapPar`, `seq`, `choice`, `branchFix`, `restrict`, `replicate`, `supervisor`
 - `Scheduler`
+
+### Bounded concurrent map
+
+`par(...)` is fixed-arity. Use `mapPar` to fan out over arrays with a concurrency cap:
+
+```typescript
+import { mapPar, Scheduler } from "cpa-agents";
+
+const processFiles = mapPar(
+  filePaths,
+  (path) => async (ctx) => analyzeFile(path, ctx.signal),
+  { concurrency: 4 }
+);
+
+const scheduler = new Scheduler({ timeout: 120_000 });
+const result = await scheduler.run("analyze", processFiles);
+// result.value preserves input order
+```
+
+Options: `concurrency` (default: all items), `failFast` (default: `true`).
 
 ### Branch-fix-continue
 
