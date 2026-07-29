@@ -243,6 +243,10 @@ for (const node of result.sessionTree) {
 }
 ```
 
+## Contributing
+
+New contributors can start with [good first issues](https://github.com/jose-compu/cpa-agents/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22). Keep pull requests focused and include the relevant local check output; documentation-only fixes can note that no code tests were needed.
+
 ## Development
 
 ```bash
