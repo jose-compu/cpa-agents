@@ -251,6 +251,14 @@ npm test
 npm run coverage
 ```
 
+## Contributing
+
+Contributions are welcome! Looking for a place to start?
+
+[<img width="16" height="16" src="https://github.githubassets.com/images/modules/logos_atom/GitHub-Mark.png" /> Good First Issues](https://github.com/jose-compu/cpa-agents/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
+
+Before submitting a PR, please read the codebase and related design docs in `docs/`. Run `npm test` to ensure nothing is broken.
+
 ## License
 
 MIT
