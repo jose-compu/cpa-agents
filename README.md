@@ -1,6 +1,6 @@
 # cpa-agents
 
-Concurrent Process Algebra for AI Agents.
+Concurrent Process Algebra for Agentic AI Orchestration.
 
 `cpa-agents` combines three layers:
 - process algebra (pi-calculus primitives for concurrency/communication)
