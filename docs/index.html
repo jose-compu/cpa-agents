@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="cpa-agents v0.3.0 — Concurrent Process Algebra for AI Agents. π-calculus primitives for Pi Harness, OpenClaw, and standalone TypeScript workflows." />
+    <meta name="description" content="cpa-agents v0.4.1 — Concurrent Process Algebra for AI Agents. π-calculus primitives for Pi Harness, OpenClaw, and standalone TypeScript workflows." />
     <title>cpa-agents · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./assets/highlight/github.min.css" media="(prefers-color-scheme: light)" />
@@ -14,7 +14,7 @@
     <header class="site-header">
       <a class="site-header__brand" href="#overview">
         <img src="./assets/logo.svg" alt="cpa-agents" width="320" height="72" />
-        <span class="site-header__version">v0.3.0</span>
+        <span class="site-header__version">v0.4.1</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/cpa-agents" target="_blank" rel="noopener noreferrer">npm</a>
@@ -173,7 +173,8 @@ console.log(result.sessionTree);</code></pre>
                 </tbody>
               </table>
             </div>
-            <p>Key exports: <code>Channel</code>, <code>select</code>, <code>par</code>, <code>seq</code>, <code>choice</code>, <code>branchFix</code>, <code>restrict</code>, <code>replicate</code>, <code>supervisor</code>, <code>Scheduler</code>.</p>
+            <p>Key exports: <code>Channel</code>, <code>select</code>, <code>par</code>, <code>mapPar</code>, <code>seq</code>, <code>choice</code>, <code>branchFix</code>, <code>restrict</code>, <code>replicate</code>, <code>supervisor</code>, <code>Scheduler</code>.</p>
+            <p><code>par(...)</code> is fixed-arity. Use <code>mapPar(items, worker, { concurrency })</code> to fan out over arrays with a concurrency cap.</p>
           </section>
 
           <section id="branch-fix" class="section">
@@ -271,7 +272,7 @@ export default createOpenClawSkill();</code></pre>
                 <tbody>
                   <tr><td><code>cpa:parallel</code></td><td>Run independent tasks concurrently</td></tr>
                   <tr><td><code>cpa:branch-fix</code></td><td>Run, detect errors, fix, continue</td></tr>
-                  <tr><td><code>cpa:fan-out</code></td><td>Same task across multiple models</td></tr>
+                  <tr><td><code>cpa:fan-out</code></td><td>Same task across models the caller names. <code>models</code> is required and must be non-empty (v0.4.1).</td></tr>
                   <tr><td><code>cpa:retry</code></td><td>Exponential backoff retries</td></tr>
                   <tr><td><code>cpa:fallback</code></td><td>Primary with fallback on failure</td></tr>
                   <tr><td><code>cpa:saga</code></td><td>Transactional workflow with compensating actions</td></tr>
@@ -279,7 +280,7 @@ export default createOpenClawSkill();</code></pre>
                 </tbody>
               </table>
             </div>
-            <p>Skill authoring reference: <code>skills/cpa-agents/SKILL.md</code> in the repository.</p>
+            <p>Skill authoring reference: <code>skills/cpa-agents/SKILL.md</code> in the repository. Do not omit <code>models</code> on fan-out; an empty list no longer falls back to default providers.</p>
           </section>
 
           <section id="pi-harness" class="section">
@@ -354,7 +355,7 @@ const tree = await loadJsonlTree("./session.jsonl");
               <pre><code class="language-bash"># Typecheck
 npm run check
 
-# Run tests (93+ cases, ~96% coverage)
+# Run tests (100 cases)
 npm test
 
 # Coverage gate
@@ -370,7 +371,7 @@ npm run docs:serve</code></pre>
 
           <footer class="site-footer">
             <p>
-              cpa-agents v0.3.0 ·
+              cpa-agents v0.4.1 ·
               <a href="https://github.com/jose-compu/cpa-agents/blob/main/LICENSE">MIT</a> ·
               <a href="https://github.com/jose-compu/cpa-agents">GitHub</a> ·
               <a href="https://www.npmjs.com/package/cpa-agents">npm</a>
