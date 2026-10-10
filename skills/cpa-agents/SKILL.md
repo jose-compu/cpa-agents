@@ -1,18 +1,32 @@
 # CPA Agents for OpenClaw
 
-**Skill version:** 2.2.0  
-**Requires:** `cpa-agents@0.4.0` or newer
+**Skill version:** 2.1.0  
+**Requires:** `cpa-agents@0.4.1` exactly
 
 Use concurrent process algebra for multi-agent orchestration in OpenClaw: parallel execution,
 branch-fix loops, model fan-out, retries, fallbacks, rollback sagas, and session-tree introspection.
+
+## Safety
+
+This skill can change the current workspace and can send task text to more than one model provider.
+
+- `branch-fix` and `saga` may create branches, write files, and request rollback. Run them only after the user explicitly asks for that repository change in this session. Show the planned steps before applying them.
+- Stay in the current workspace. Do not read other skill folders, other repositories, or other session transcripts.
+- `fan-out` sends the task text to every named model. Do not put secrets, credentials, tokens, private keys, or private file contents in that text.
+- Do not call `fan-out` with an empty `models` list. The library would otherwise send the task to `claude-sonnet-4-20250514` and `gpt-4o`. Ask the user which models to use.
+- Do not install a floating package range, enable user-global hooks, spawn background agents, or send cross-session messages from this skill.
 
 ## Install
 
 ### 1) Install library
 
+Install the reviewed package exactly. Do not use `npm install cpa-agents` or a range such as `^0.4.1`.
+
 ```bash
-npm install cpa-agents@0.4.0
+npm install cpa-agents@0.4.1 --save-exact
 ```
+
+Commit `package-lock.json` and install from it with `npm ci`. The code that runs is that npm package, not this markdown file. After publish, pin the npm integrity hash from `npm view cpa-agents@0.4.1 dist.integrity`.
 
 ### 2) Create skill entrypoint
 
@@ -25,7 +39,7 @@ export default createOpenClawSkill();
 The skill object exposes:
 
 - `name` — `"cpa-agents"`
-- `version` — library version from the installed package (e.g. `0.4.0`; distinct from this skill doc **2.2.0**)
+- `version` — library version from the installed package (`0.4.1`; distinct from this skill doc **2.1.0**)
 - `skillMd` — embedded markdown reference
 - `handleCommand(command, args, openclawCtx)` — runs CPA workflows
 
@@ -104,6 +118,8 @@ Returns merged parallel results via `SchedulerResult`.
 
 Run one task; if `agent.run()` returns `errors`, branch into a fix subprocess, then resume.
 
+Do this only after the user explicitly asks to change this workspace. Describe the branch and files before writing them.
+
 ```json
 {
   "task": "implement auth middleware and resolve lint issues",
@@ -117,7 +133,7 @@ Fix prompt sent to agent: `Fix the following issues: {errors joined by "; "}`.
 
 ### `fan-out`
 
-Run the same task across multiple models and merge outputs.
+Run the same task across models the user named, then merge outputs. `models` is required. Do not rely on the library default, which would send the task to two providers.
 
 ```json
 {
@@ -127,7 +143,7 @@ Run the same task across multiple models and merge outputs.
 }
 ```
 
-If `models` is omitted, defaults to `["claude-sonnet-4-20250514", "gpt-4o"]`.
+Do not omit `models`. Omitting it sends the task to `claude-sonnet-4-20250514` and `gpt-4o`.
 
 Merge shape: `{ results: string[], consensus: number }`.
 
@@ -170,6 +186,8 @@ Run fallback task if primary fails.
 ### `saga`
 
 Run steps sequentially; on failure, undo completed steps in reverse order.
+
+Do this only after the user explicitly asks for the forward steps and accepts rollback. Rollback can delete a branch or revert files in the current workspace.
 
 ```json
 {

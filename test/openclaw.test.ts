@@ -175,31 +175,23 @@ describe("openclaw adapter", () => {
     assert.deepEqual(calls, ["clean task"]);
   });
 
-  it("fan-out uses default models when models arg is missing", async () => {
-    const calledModels: string[] = [];
+  it("fan-out rejects a missing or empty models array", async () => {
     const skill = createOpenClawSkill();
     const ctx = {
       session: { id: "s-default-models" },
       agent: {
-        run: async (_task: string, opts?: { signal?: AbortSignal; model?: string }) => {
-          if (opts?.model) calledModels.push(opts.model);
-          return { output: `out:${opts?.model ?? "none"}` };
-        },
+        run: async () => ({ output: "unused" }),
       },
     };
 
-    const result = await skill.handleCommand(
-      "fan-out",
-      { task: "compare defaults" },
-      ctx
+    await assert.rejects(
+      () => skill.handleCommand("fan-out", { task: "compare defaults" }, ctx),
+      /non-empty models array/
     );
-
-    assert.equal(result.success, true);
-    if (result.success) {
-      const value = result.value as { results: string[]; consensus: number };
-      assert.equal(value.consensus, 2);
-    }
-    assert.deepEqual(calledModels, ["claude-sonnet-4-20250514", "gpt-4o"]);
+    await assert.rejects(
+      () => skill.handleCommand("fan-out", { task: "compare defaults", models: [] }, ctx),
+      /non-empty models array/
+    );
   });
 
   it("retry command retries and eventually succeeds", async () => {
