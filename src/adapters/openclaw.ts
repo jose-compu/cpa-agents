@@ -66,7 +66,7 @@ Input:
 \`\`\`
 
 ### cpa:fan-out
-Run same task across multiple models and return merged results.
+Run same task across models the caller names. \`models\` is required and must be non-empty.
 
 Input:
 \`\`\`json
@@ -313,10 +313,14 @@ export function createOpenClawSkill() {
 
           case "fan-out": {
             const task = args.task as string;
-            const models = (args.models as string[]) ?? [
-              "claude-sonnet-4-20250514",
-              "gpt-4o",
-            ];
+            const models = Array.isArray(args.models)
+              ? (args.models as unknown[]).map((m) => String(m).trim()).filter(Boolean)
+              : [];
+            if (models.length === 0) {
+              throw new Error(
+                "fan-out requires a non-empty models array; naming models is mandatory"
+              );
+            }
 
             const agents: AgentCall<string, string>[] = models.map(
               (model: string) => ({
